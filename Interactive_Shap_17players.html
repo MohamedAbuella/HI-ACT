@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Energy System Profit Allocation (N=17, NPV-Based, MC Shapley)</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .input-group { margin-bottom: 15px; }
+        label { display: inline-block; width: 200px; }
+        input[type="number"], input[type="range"] { width: 150px; }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #results { margin-top: 20px; border-top: 2px solid #ccc; padding-top: 20px; }
+        #status { font-weight: bold; color: #333; margin-bottom: 10px; min-height: 40px; } /* Adjusted status style */
+        pre { background-color: #eee; padding: 10px; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
+        .warning { color: orange; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .success { color: green; font-weight: bold; }
+        .info { color: blue; font-weight: bold; }
+        .number { text-align: right; }
+        .small-table td, .small-table th { font-size: 0.9em; padding: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Energy System Profit Allocation (N=17 Players, Monte Carlo Shapley)</h1>
+    <p>This tool calculates potential profit allocation for a 17-player energy system using Cooperative Game Theory. The value of a coalition (`v(S)`) is based on the Net Present Value (NPV). The Shapley value is estimated using Monte Carlo sampling to avoid excessive computation time.</p>
+
+    <h2>Global Parameters</h2>
+    <div class="input-group">
+        <label for="avgPrice">Avg. Energy Price (£/MWh):</label>
+        <input type="number" id="avgPrice" value="80" min="0" step="1">
+    </div>
+    <div class="input-group">
+        <label for="co2Penalty">CO₂ Penalty (£/tCO₂):</label>
+        <input type="number" id="co2Penalty" value="100" min="0" step="1">
+    </div>
+     <div class="input-group">
+        <label for="globalPhi">Global Fixed Cost Fraction (φ) [0-1]:</label>
+        <input type="range" id="globalPhiSlider" min="0" max="1" step="0.01" value="0.02">
+        <span id="globalPhiValue">0.02</span>
+        <input type="checkbox" id="useGlobalPhi" checked> Use Global φ
+         <small>(Note: Assumed to be annual fixed O&M % of Capex. If unchecked, uses individual generator φ values.)</small>
+    </div>
+     <div class="input-group">
+        <label for="mcSamples">Monte Carlo Samples (for Shapley):</label>
+        <input type="number" id="mcSamples" value="5000" min="100" step="100">
+         <small>(More samples = higher accuracy, longer calculation)</small>
+    </div>
+
+    <h2>Generator Data (N=17 Players)</h2>
+    <p>Based on 2050 capacity. Assumes generators in a coalition operate independently to capacity.</p>
+    <table id="generatorTable" class="small-table">
+        <thead>
+            <tr>
+                <th>ID</th><th>Type</th><th>Max GW (2050)</th><th>Op Costs (£/MWh)</th><th>Capex (£/MW) [ε]</th><th>Fixed Cost Frac [φ]</th><th>Econ Life (yrs) [n]</th><th>Emissions (tCO₂/MWh) [h]</th><th>Discount Rate [r]</th><th>Capacity Factor [CF]</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Data will be populated by JavaScript -->
+        </tbody>
+    </table>
+
+    <button id="calculateButton">Calculate Allocations (using MC Shapley)</button>
+    <div id="status"></div>
+
+    <div id="results" style="display: none;">
+        <h2>Results</h2>
+
+        <h3>1. Individual & Grand Coalition NPV</h3>
+        <p>Individual NPV `v({i})` if operating alone, and Grand Coalition NPV `v(N)` if all cooperate (calculated exactly).</p>
+        <pre id="individualNpvs"></pre>
+        <p><strong>Grand Coalition NPV v(N): <span id="grandCoalitionNpv"></span></strong></p>
+
+        <h3>2. Shapley Value Allocation (Monte Carlo Estimate)</h3>
+        <p>Fair allocation based on average marginal contribution, estimated from <strong id="numSamplesUsed"></strong> random permutations.</p>
+        <p class="info">This is an estimate. Increasing the number of samples improves accuracy.</p>
+        <pre id="shapleyValue"></pre>
+        <p><strong>Total Allocated (Est. Shapley): <span id="totalShapley"></span></strong></p>
+        <p><strong>Core Check for Estimated Shapley Allocation:</strong></p>
+        <pre id="shapleyCoreCheck"></pre>
+
+        <h3>3. Core Analysis</h3>
+        <p>The Core is the set of stable allocations where no coalition has an incentive to break away.</p>
+        <p>Individual Rationality Constraints: `x_i ≥ v({i})`</p>
+        <p>Group Rationality Constraints: `Sum(x_i for i in S) ≥ v(S)` for all coalitions S.</p>
+        <p class="warning">A full Core analysis requires checking `v(S)` for 131,070 group constraints and is computationally infeasible in this browser tool. Only limited checks (Efficiency, Individual Rationality) are performed on the *estimated* Shapley allocation above.</p>
+
+        <h3>4. Nucleolus & Nash Bargaining Solution (NBS)</h3>
+        <p>These are alternative allocation methods, not calculated here due to complexity.</p>
+        <!-- Descriptions remain the same -->
+    </div>
+
+</div>
+
+<script>
+    // Generator Data Store (Same as before)
+    const generators = [
+        { id: 1, type: 'Gas CCS', max_gw_2050: 10, op_costs: 5.16, capex: 2361000, phi: 1, life: 25, emissions: 0.03, discount_rate: 0.14, cf: 0.92 },
+        { id: 2, type: 'Nuclear', max_gw_2050: 25, op_costs: 10.58, capex: 5191000, phi: 1, life: 40, emissions: 0, discount_rate: 0.1, cf: 0.9 },
+        { id: 3, type: 'Offshore Wind', max_gw_2050: 100, op_costs: 7.05, capex: 1642000, phi: 1, life: 23, emissions: 0, discount_rate: 0.09, cf: 0.5 },
+        { id: 4, type: 'PV', max_gw_2050: 70, op_costs: 4.72, capex: 452000, phi: 1, life: 25, emissions: 0, discount_rate: 0.06, cf: 0.15 },
+        { id: 5, type: 'Biomass', max_gw_2050: 5, op_costs: 2.13, capex: 581000, phi: 1, life: 25, emissions: 0.32, discount_rate: 0.07, cf: 0.89 },
+        { id: 6, type: 'Hydropower', max_gw_2050: 5, op_costs: 2.39, capex: 2250000, phi: 1, life: 40, emissions: 0, discount_rate: 0.07, cf: 0.53 },
+        { id: 8, type: 'Storage', max_gw_2050: 20, op_costs: 5.71, capex: 395000, phi: 1, life: 20, emissions: 0, discount_rate: 0.07, cf: 0.3 },
+        { id: 10, type: 'Onshore Wind', max_gw_2050: 50, op_costs: 8.82, capex: 1642000, phi: 1, life: 23, emissions: 0, discount_rate: 0.09, cf: 0.4 },
+        { id: 13, type: 'G2P (H2-CCGT)', max_gw_2050: 10, op_costs: 3.23, capex: 697000, phi: 1, life: 25, emissions: 0, discount_rate: 0.07, cf: 0.6 },
+        { id: 14, type: 'G2P (H2-OCGT)', max_gw_2050: 10, op_costs: 4.85, capex: 374000, phi: 1, life: 30, emissions: 0, discount_rate: 0.07, cf: 0.2 },
+        { id: 15, type: 'G2P (Fuel Cell)', max_gw_2050: 10, op_costs: 11.07, capex: 465000, phi: 1, life: 30, emissions: 0, discount_rate: 0.1, cf: 0.5 },
+        { id: 16, type: 'Hydrogen (P2G)', max_gw_2050: 20, op_costs: 11.07, capex: 465000, phi: 1, life: 30, emissions: 0, discount_rate: 0.1, cf: 0.5 },
+        { id: 17, type: 'Hydrogen (G2G)', max_gw_2050: 15, op_costs: 3.28, capex: 384000, phi: 1, life: 40, emissions: 0.02, discount_rate: 0.1, cf: 0.85 }
+    ];
+
+    // --- UI Elements (Add mcSamplesInput) ---
+    const avgPriceInput = document.getElementById('avgPrice');
+    const co2PenaltyInput = document.getElementById('co2Penalty');
+    const globalPhiSlider = document.getElementById('globalPhiSlider');
+    const globalPhiValueSpan = document.getElementById('globalPhiValue');
+    const useGlobalPhiCheckbox = document.getElementById('useGlobalPhi');
+    const mcSamplesInput = document.getElementById('mcSamples'); // New Input
+    const calculateButton = document.getElementById('calculateButton');
+    const statusDiv = document.getElementById('status');
+    const resultsDiv = document.getElementById('results');
+    const generatorTableBody = document.getElementById('generatorTable').getElementsByTagName('tbody')[0];
+    const individualNpvsPre = document.getElementById('individualNpvs');
+    const grandCoalitionNpvSpan = document.getElementById('grandCoalitionNpv');
+    const shapleyValuePre = document.getElementById('shapleyValue');
+    const totalShapleySpan = document.getElementById('totalShapley');
+    const shapleyCoreCheckPre = document.getElementById('shapleyCoreCheck');
+    const numSamplesUsedSpan = document.getElementById('numSamplesUsed'); // To display actual samples used
+
+    // --- Helper Functions ---
+    function formatCurrency(value) {
+        // Handle potential NaN or undefined values gracefully
+         if (isNaN(value) || typeof value === 'undefined' || value === null) {
+             return 'N/A';
+         }
+        return value.toLocaleString('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 });
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Fisher-Yates (Knuth) Shuffle
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]]; // Swap elements
+        }
+        return array;
+    }
+
+    // Function to get subset key (string representation, sorted)
+    function getSubsetKey(subsetIds) {
+        // Ensure IDs are numbers and sort numerically
+        return subsetIds.map(Number).sort((a, b) => a - b).join(',');
+    }
+
+
+    // --- Core Calculation Logic ---
+
+    /**
+     * Calculates the Net Present Value (NPV) for a given coalition of generators.
+     * (Same implementation as before)
+     * @param {number[]} coalitionIds - Array of generator IDs in the coalition.
+     * @param {object} params - Global parameters { avgPrice, co2Penalty, globalPhi, useGlobalPhi }.
+     * @returns {number} The total NPV for the coalition.
+     */
+    function calculateCoalitionNPV(coalitionIds, params) {
+        let totalNpv = 0;
+        const hoursPerYear = 8760;
+
+        coalitionIds.forEach(id => {
+            const gen = generators.find(g => g.id === id);
+            if (!gen || gen.max_gw_2050 <= 0) {
+                return;
+            }
+
+            const capacityMW = gen.max_gw_2050 * 1000;
+            const annualEnergyMWh = capacityMW * hoursPerYear * gen.cf;
+            const initialInvestment = gen.capex * capacityMW;
+
+            const annualRevenue = annualEnergyMWh * params.avgPrice;
+            const annualOpCost = annualEnergyMWh * gen.op_costs;
+            const annualCarbonCost = annualEnergyMWh * gen.emissions * params.co2Penalty;
+            let phi = params.useGlobalPhi ? params.globalPhi : gen.phi;
+            const annualFixedCost = phi * initialInvestment;
+            const annualNetOperatingProfit = annualRevenue - annualOpCost - annualCarbonCost - annualFixedCost;
+
+            const r = gen.discount_rate;
+            const n = gen.life;
+            let pvFactor = (r > 1e-9) ? (1 - Math.pow(1 + r, -n)) / r : n;
+            const pvOperating = annualNetOperatingProfit * pvFactor;
+            const npv_gen = pvOperating - initialInvestment;
+            totalNpv += npv_gen;
+        });
+
+        return totalNpv;
+    }
+
+    // --- Cooperative Game Calculations ---
+
+    // Cache for characteristic function values v(S) calculated during MC sampling
+    const characteristicFunctionCache = new Map();
+
+    /**
+     * Gets or calculates the value v(S) for a given coalition, using a cache.
+     * @param {number[]} coalitionIds - Array of generator IDs.
+     * @param {object} params - Global parameters.
+     * @returns {number} The value v(S).
+     */
+    function getOrCalculateV(coalitionIds, params) {
+        if (!coalitionIds || coalitionIds.length === 0) {
+            return 0; // v({}) = 0
+        }
+        const key = getSubsetKey(coalitionIds);
+        if (characteristicFunctionCache.has(key)) {
+            return characteristicFunctionCache.get(key);
+        } else {
+            const value = calculateCoalitionNPV(coalitionIds, params);
+            characteristicFunctionCache.set(key, value);
+            return value;
+        }
+    }
+
+    /**
+     * Calculates Shapley Values using Monte Carlo estimation.
+     * @param {number[]} playerIds - Array of all player IDs.
+     * @param {object} params - Global parameters.
+     * @param {number} numSamples - Number of random permutations to sample.
+     * @returns {Promise<Map<number, number>>} Map of Player ID -> Estimated Shapley Value.
+     */
+    async function calculateShapleyMC(playerIds, params, numSamples) {
+        const n = playerIds.length;
+        const shapleySums = new Map(); // Store sum of marginal contributions
+        playerIds.forEach(id => shapleySums.set(id, 0)); // Initialize sums to 0
+
+        statusDiv.innerHTML = `Estimating Shapley Values using Monte Carlo... (0/${numSamples} samples)`;
+
+        for (let i = 0; i < numSamples; i++) {
+            const permutation = shuffleArray([...playerIds]); // Get a new random permutation
+            let currentCoalitionIds = [];
+            let v_current = 0; // Represents v(currentCoalition)
+
+            for (const playerId of permutation) {
+                const coalitionWithPlayerIds = [...currentCoalitionIds, playerId];
+                // v(S U {i}) - calculate or get from cache
+                const v_withPlayer = getOrCalculateV(coalitionWithPlayerIds, params);
+                // Marginal contribution = v(S U {i}) - v(S)
+                const marginalContribution = v_withPlayer - v_current;
+
+                // Add MC to the sum for this player
+                shapleySums.set(playerId, shapleySums.get(playerId) + marginalContribution);
+
+                // Prepare for the next player in the permutation
+                currentCoalitionIds.push(playerId);
+                v_current = v_withPlayer; // Update v(S) for the next iteration
+            }
+
+            // Update progress indicator periodically
+            if ((i + 1) % Math.max(100, Math.floor(numSamples / 20)) === 0 || i === numSamples - 1) {
+                 statusDiv.innerHTML = `Estimating Shapley Values using Monte Carlo... (${i + 1}/${numSamples} samples)`;
+                 await sleep(1); // Prevent freezing
+            }
+        }
+
+        // Calculate the average (estimated Shapley value)
+        const shapleyValuesMC = new Map();
+        shapleySums.forEach((sum, id) => {
+            shapleyValuesMC.set(id, sum / numSamples);
+        });
+
+        statusDiv.innerHTML = `Shapley Value estimation complete (${numSamples} samples).`;
+        return shapleyValuesMC;
+    }
+
+
+    /**
+     * Performs LIMITED Core Check (Efficiency & Individual Rationality) for an allocation.
+     * Uses the cached/calculated v({i}) and v(N).
+     * @param {number[]} playerIds - All player IDs.
+     * @param {Map<number, number>} allocation - Map Player ID -> Allocated value (e.g., estimated Shapley).
+     * @param {object} params - Global parameters (needed to ensure v(i) and v(N) are calculated/cached if not already).
+     * @returns {object} { isInCore: boolean, message: string }
+     */
+    function checkCoreLimitedMC(playerIds, allocation, params) {
+         // Ensure v(N) is calculated and cached
+         const v_N = getOrCalculateV(playerIds, params); // Use the cache function
+
+         let totalAllocation = 0;
+         allocation.forEach(value => { totalAllocation += value; });
+
+         // 1. Efficiency Check
+         const tolerance = 1e-6; // Tolerance for floating point comparisons
+         let efficiencyMet = Math.abs(totalAllocation - v_N) <= tolerance * Math.max(1, Math.abs(v_N)); // Added max(1,..) for near-zero v_N
+         let message = `Efficiency Condition ${efficiencyMet ? 'MET' : 'FAILED'}:\n  Sum of allocations (${formatCurrency(totalAllocation)}) ${efficiencyMet ? '≈' : '!='} v(N) (${formatCurrency(v_N)})`;
+
+         // Add note about MC estimation impact on efficiency
+         if (Math.abs(totalAllocation - v_N) > 1e-9) { // If not almost exactly equal
+              message += `\n  (Note: Deviation might be due to MC estimation error in Shapley values)`;
+         }
+         message += "\n";
+
+
+         // 2. Individual Rationality Check
+         let individualRationalityMet = true;
+         let irFailures = "";
+         for (const playerId of playerIds) {
+             // Ensure v({i}) is calculated and cached
+             const v_i = getOrCalculateV([playerId], params); // Use the cache function
+             const x_i = allocation.get(playerId);
+
+              // Check if x_i is a valid number before comparison
+             if (isNaN(x_i) || x_i === undefined) {
+                  irFailures += `\nIndividual Rationality FAILED for Player ${playerId}: Allocation is not a number (${x_i}). Required >= ${formatCurrency(v_i)}.`;
+                  individualRationalityMet = false;
+                  continue; // Skip comparison if allocation is invalid
+             }
+
+
+             if (x_i < v_i - tolerance) { // Allow for small floating point errors
+                 irFailures += `\nIndividual Rationality FAILED for Player ${playerId}:\n  Allocation x_${playerId} = ${formatCurrency(x_i)}\n  Required x_${playerId} >= v({${playerId}}) = ${formatCurrency(v_i)}`;
+                 individualRationalityMet = false;
+                 // Don't break, report all failures
+             }
+         }
+
+         if (individualRationalityMet) {
+             message += "\nAll Individual Rationality conditions MET (x_i >= v({i}))";
+         } else {
+             message += irFailures;
+         }
+
+          // 3. Group Rationality Check (OMITTED)
+         message += "\n\nGroup Rationality Check (Sum(x_i for i in S) >= v(S)): OMITTED due to N=17 complexity.";
+
+         // Determine overall result based *only* on IR for MC context (efficiency might deviate)
+         const isInCore = individualRationalityMet; // Primary check for stability with MC Shapley
+
+         return {
+             isInCore: isInCore, // Report based on IR primarily
+             message: message + `\n\nBased on limited checks (Efficiency*, Individual Rationality) using MC Shapley, the allocation ${isInCore ? 'appears potentially stable' : 'is likely UNSTABLE'}. *Efficiency depends on MC accuracy.`
+         };
+     }
+
+    // --- Event Handlers ---
+    function populateGeneratorTable() {
+        generatorTableBody.innerHTML = ''; // Clear existing rows
+        generators.forEach(g => {
+            const row = generatorTableBody.insertRow();
+            row.innerHTML = `
+                <td>${g.id}</td>
+                <td>${g.type}</td>
+                <td class="number">${g.max_gw_2050}</td>
+                <td class="number">${g.op_costs.toFixed(2)}</td>
+                <td class="number">${g.capex.toLocaleString()}</td>
+                <td class="number">${g.phi}</td>
+                <td class="number">${g.life}</td>
+                <td class="number">${g.emissions}</td>
+                <td class="number">${g.discount_rate}</td>
+                <td class="number">${g.cf}</td>
+            `;
+        });
+    }
+
+     globalPhiSlider.oninput = function() {
+        globalPhiValueSpan.textContent = this.value;
+    }
+
+    calculateButton.onclick = async function() {
+        calculateButton.disabled = true;
+        resultsDiv.style.display = 'none';
+        statusDiv.innerHTML = "Starting calculations...";
+        characteristicFunctionCache.clear(); // Clear cache for new run
+        characteristicFunctionCache.set(getSubsetKey([]), 0); // Set v({}) = 0
+
+
+        // Get parameters
+        const params = {
+            avgPrice: parseFloat(avgPriceInput.value),
+            co2Penalty: parseFloat(co2PenaltyInput.value),
+            globalPhi: parseFloat(globalPhiSlider.value),
+            useGlobalPhi: useGlobalPhiCheckbox.checked
+        };
+        const numSamples = parseInt(mcSamplesInput.value);
+
+        if (isNaN(params.avgPrice) || isNaN(params.co2Penalty) || isNaN(params.globalPhi) || isNaN(numSamples) || numSamples <=0) {
+             statusDiv.innerHTML = '<span class="error">Invalid input parameters. Please enter valid numbers (Samples > 0).</span>';
+             calculateButton.disabled = false;
+             return;
+        }
+
+        try {
+            const playerIds = generators.map(g => g.id);
+            const n = playerIds.length;
+
+            // --- 1. Calculate v({i}) and v(N) explicitly ---
+            statusDiv.innerHTML = "Calculating individual and grand coalition NPVs...";
+            await sleep(10); // Small delay for status update
+
+            let individualText = "Individual NPVs v({i}):\n";
+            for (const id of playerIds) {
+                 const v_i = getOrCalculateV([id], params); // Calculate and cache
+                 const gen = generators.find(g => g.id === id);
+                 individualText += `  Player ${id} (${gen?.type || 'Unknown'}): ${formatCurrency(v_i)}\n`;
+            }
+            individualNpvsPre.textContent = individualText;
+
+            const v_N = getOrCalculateV(playerIds, params); // Calculate and cache v(N)
+            grandCoalitionNpvSpan.textContent = formatCurrency(v_N);
+
+             // --- 2. Estimate Shapley Value using MC ---
+            const shapleyMapMC = await calculateShapleyMC(playerIds, params, numSamples);
+            numSamplesUsedSpan.textContent = numSamples.toLocaleString(); // Update displayed samples
+
+
+             let shapleyText = `Shapley Allocation (Est. from ${numSamples.toLocaleString()} samples):\n`;
+             let totalShapley = 0;
+             shapleyMapMC.forEach((value, id) => {
+                const gen = generators.find(g => g.id === id);
+                shapleyText += `  Player ${id} (${gen?.type || 'Unknown'}): ${formatCurrency(value)}\n`;
+                totalShapley += value; // Summing up the estimated values
+             });
+             shapleyValuePre.textContent = shapleyText;
+             totalShapleySpan.textContent = formatCurrency(totalShapley); // Display the sum
+
+             // --- 3. Limited Core Check for MC Shapley ---
+             statusDiv.innerHTML += "<br>Performing limited Core check (Efficiency, Individual Rationality)...";
+             await sleep(10);
+             const coreCheckResult = checkCoreLimitedMC(playerIds, shapleyMapMC, params); // Pass params
+             shapleyCoreCheckPre.textContent = coreCheckResult.message;
+             shapleyCoreCheckPre.className = coreCheckResult.isInCore ? 'success' : 'error'; // Color based on check result
+
+             statusDiv.innerHTML += "<br>Calculations complete.";
+
+
+        } catch (error) {
+            console.error("Calculation Error:", error);
+            statusDiv.innerHTML = `<span class="error">An error occurred during calculation: ${error.message}</span>`;
+        } finally {
+            resultsDiv.style.display = 'block';
+            calculateButton.disabled = false; // Re-enable button
+        }
+    };
+
+    // --- Initial Setup ---
+    window.onload = () => {
+        populateGeneratorTable();
+        globalPhiValueSpan.textContent = globalPhiSlider.value; // Initialize span text
+    };
+
+</script>
+
+</body>
+</html>
