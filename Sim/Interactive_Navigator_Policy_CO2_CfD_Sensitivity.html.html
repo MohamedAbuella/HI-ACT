@@ -69,6 +69,15 @@
             letter-spacing: 0.5px;
         }
 
+        /* Updated style for the subtitle to appear below items */
+        .section-subtitle {
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            margin-top: 2px;
+            font-style: italic;
+            line-height: 1.2;
+        }
+
         /* --- TOGGLE SWITCH STYLING --- */
         .toggle-container {
             display: flex;
@@ -88,13 +97,16 @@
             flex: 1;
             text-align: center;
             padding: 8px 5px;
-            font-size: 0.9rem;
+            font-size: 0.85rem; 
             font-weight: 600;
             color: var(--toggle-text);
             cursor: pointer;
             border-radius: 4px;
             transition: all 0.2s ease-in-out;
             z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .toggle-container input[type="radio"]:checked + label {
@@ -227,16 +239,17 @@
             </div>
         </div>
 
-        <!-- 1. H2 TYPE TOGGLE -->
+        <!-- 1. CARBON CAPTURE & STORAGE (CCS) PATHWAYS -->
         <div class="control-group">
-            <label class="section-title">H2 Variants (with Green H2)</label>
+            <label class="section-title">Carbon Capture & Storage (CCS) Pathways</label>
             <div class="toggle-container">
                 <input type="radio" name="h2_type" id="h2_grey" value="GreyH2" data-folder="CfD_GreyH2_Cooperative" checked onchange="updateImage()">
-                <label for="h2_grey">Grey H2</label>
+                <label for="h2_grey">Without CCS</label>
 
                 <input type="radio" name="h2_type" id="h2_blue" value="BlueH2" data-folder="CfD_BlueH2_Cooperative" onchange="updateImage()">
-                <label for="h2_blue">Blue H2</label>
+                <label for="h2_blue">With CCS</label>
             </div>
+            <div class="section-subtitle">Green H2 & Blue H2 (with CCS) or Grey H2 (without CCS)</div>
         </div>
 
         <!-- 2. SCENARIO TOGGLE -->
@@ -271,15 +284,7 @@
                 <option value="Fig_green_H2_ratio">Green H2 Ratio</option>
                 <option value="Fig_marg_H2_cost">Marginal Cost of H2</option>
                 <option value="Fig_opcost">Operational Cost [million £]</option>
-                <option value="Fig_Total_CfD_cost">Total CfD Cost [annual]</option>
-                
-                <option value="Fig_CfD_support_hyd">CfD-Based Support</option>
-                <option value="Fig_opex_support_hyd">Opex-Based Support</option>
-                
                 <option value="Fig_NPV">Net Present Value (NPV)</option>
-                <option value="Fig_score">Combined Score</option>
-                <option value="Fig_MAC">Marginal Abatement Cost (MAC)</option>
-                <!-- NEW METRIC ADDED BELOW -->
                 <option value="Fig_MACH">Marginal Abatement Cost of H2 (MACH)</option>
             </select>
         </div>
@@ -329,7 +334,6 @@
             if (metricPrefix === "Fig_green_H2_ratio") {
                 filename = `${metricPrefix}_${scenShort}_${h2Type}_${priceLabel}.png`;
             } else {
-                // This covers Fig_MAC and Fig_MACH using the standard pattern: Fig_MACH_Hi_H2_High_Price.png
                 filename = `${metricPrefix}_${scenShort}_${priceLabel}.png`;
             }
 
