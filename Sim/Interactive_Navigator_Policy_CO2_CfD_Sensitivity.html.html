@@ -69,7 +69,6 @@
             letter-spacing: 0.5px;
         }
 
-        /* Updated style for the subtitle to appear below items */
         .section-subtitle {
             font-size: 0.75rem;
             color: #7f8c8d;
@@ -115,12 +114,8 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
-        .toggle-container label:hover:not(.active) {
-            background-color: rgba(255,255,255,0.5);
-        }
-
         /* --- DROPDOWN & INPUT STYLING --- */
-        select, input[type="text"] {
+        select {
             padding: 8px;
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -128,11 +123,6 @@
             width: 100%;
             box-sizing: border-box;
             background-color: white;
-        }
-        
-        select:focus, input:focus {
-            outline: none;
-            border-color: var(--secondary);
         }
 
         /* --- BUTTONS --- */
@@ -152,10 +142,6 @@
             cursor: pointer;
             transition: background 0.2s;
             font-weight: bold;
-        }
-
-        button:hover {
-            background-color: #219150;
         }
 
         .file-info {
@@ -181,21 +167,21 @@
         }
 
         #image-container {
-            max-width: 100%;
-            max-height: 95%;
+            width: 100%;
+            height: 95%;
             box-shadow: 0 4px 20px rgba(0,0,0,0.15);
             border-radius: 8px;
             overflow: hidden;
             background: white;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            flex-direction: column;
+            position: relative;
         }
 
-        #result-image {
-            max-width: 100%;
-            max-height: 90vh;
-            object-fit: contain;
+        #result-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
             display: block;
         }
 
@@ -206,8 +192,13 @@
             text-align: center;
             padding: 40px;
             background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            border: 1px solid #ddd;
+            z-index: 10;
         }
 
         .loading {
@@ -219,6 +210,7 @@
             animation: spin 1s linear infinite;
             position: absolute;
             display: none;
+            z-index: 5;
         }
 
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -239,7 +231,6 @@
             </div>
         </div>
 
-        <!-- 1. CARBON CAPTURE & STORAGE (CCS) PATHWAYS -->
         <div class="control-group">
             <label class="section-title">Carbon Capture & Storage (CCS) Pathways</label>
             <div class="toggle-container">
@@ -252,7 +243,6 @@
             <div class="section-subtitle">Green H2 & Blue H2 (with CCS) or Grey H2 (without CCS)</div>
         </div>
 
-        <!-- 2. SCENARIO TOGGLE -->
         <div class="control-group">
             <label class="section-title">Investment Scenario</label>
             <div class="toggle-container">
@@ -264,7 +254,6 @@
             </div>
         </div>
 
-        <!-- 3. PRICE TOGGLE -->
         <div class="control-group">
             <label class="section-title">Feedstock Price Level</label>
             <div class="toggle-container">
@@ -276,17 +265,17 @@
             </div>
         </div>
 
-        <!-- 4. METRIC DROPDOWN -->
+        <!-- UPDATED METRIC LIST -->
         <div class="control-group">
             <label class="section-title" for="metric">Metric / Heatmap</label>
             <select id="metric" onchange="updateImage()">
-                <option value="Fig_emissions">CO2 Emissions</option>
-                <option value="Fig_green_H2_ratio">Green H2 Ratio</option>
-                <option value="Fig_marg_H2_cost">Marginal Cost of H2</option>
-                <option value="Fig_opcost">Operational Cost [million £]</option>
+                <option value="Fig_emissions">Total system emissions</option>
+                <option value="Fig_opcost">Operational Cost</option>
+                <option value="Fig_green_H2_ratio">Green hydrogen penetration ratio</option>
+                <option value="Fig_marg_H2_cost">Marginal cost of hydrogen</option>
                 <option value="Fig_Total_CfD_cost">Total CfD Cost [annual]</option>
                 <option value="Fig_NPV">Net Present Value (NPV)</option>
-                <option value="Fig_MACH">Marginal Abatement Cost of H2 (MACH)</option>
+                <option value="Fig_MACH">Marginal Abatement Cost of Hydrogen (MACH)</option>
             </select>
         </div>
 
@@ -305,13 +294,13 @@
         <div class="loading" id="loader"></div>
         <div id="image-container">
             <div id="error-message">
-                <strong>Image not found</strong><br><br>
+                <strong>File not found</strong><br><br>
                 <span style="font-size: 0.9em; color: #555;">
-                    Ensure this HTML file is in the "Sim2" folder.<br>
-                    Check if the folder "Summary_Results_0_250_100_500" exists inside the Grey/Blue folders.
+                    The browser could not find the PDF at:<br>
+                    <code id="error-path-text" style="word-break: break-all; color: #c0392b;"></code>
                 </span>
             </div>
-            <img id="result-image" src="" alt="Heatmap Result" onload="imageLoaded()" onerror="imageError()">
+            <iframe id="result-frame" src=""></iframe>
         </div>
     </div>
 
@@ -321,49 +310,51 @@
             "Lw_H2": { folder: "Scenario_Low_H2" }
         };
 
+        const priceMap = {
+            "High_Price": "Hi_Price",
+            "Low_Price": "Lw_Price"
+        };
+
         function getImagePath() {
             const h2Input = document.querySelector('input[name="h2_type"]:checked');
             const h2Type = h2Input.value; 
             const projectFolder = h2Input.getAttribute('data-folder');
+            
             const scenShort = document.querySelector('input[name="scenario"]:checked').value;
-            const priceLabel = document.querySelector('input[name="price"]:checked').value;
+            const priceVal = document.querySelector('input[name="price"]:checked').value;
             const summaryFolderName = document.getElementById('summary_folder').value;
             const metricPrefix = document.getElementById('metric').value;
-            const scenFolder = scenarioConfig[scenShort].folder;
             
-            let filename = "";
-            if (metricPrefix === "Fig_green_H2_ratio") {
-                filename = `${metricPrefix}_${scenShort}_${h2Type}_${priceLabel}.png`;
-            } else {
-                filename = `${metricPrefix}_${scenShort}_${priceLabel}.png`;
-            }
+            const scenFolder = scenarioConfig[scenShort].folder;
+            const mappedPrice = priceMap[priceVal];
+            
+            // Suffix logic: wo_CCS for Grey, with_CCS for Blue
+            const ccsSuffix = (h2Type === "GreyH2") ? "wo_CCS" : "with_CCS";
 
-            return `${projectFolder}/${summaryFolderName}/Heatmaps/${scenFolder}/${priceLabel}/${filename}`;
+            // Construct filename
+            const filename = `${metricPrefix}_${scenShort}_${mappedPrice}_${ccsSuffix}.pdf`;
+
+            return `${projectFolder}/${summaryFolderName}/Heatmaps/${scenFolder}/${mappedPrice}/${filename}`;
         }
 
         function updateImage() {
             const imgPath = getImagePath();
-            const imgElement = document.getElementById('result-image');
+            const frame = document.getElementById('result-frame');
             const pathDisplay = document.getElementById('filepath-display');
             const errorMsg = document.getElementById('error-message');
+            const errorPathText = document.getElementById('error-path-text');
             const loader = document.getElementById('loader');
 
             pathDisplay.textContent = imgPath;
+            errorPathText.textContent = imgPath;
             errorMsg.style.display = 'none';
-            imgElement.style.display = 'none'; 
             loader.style.display = 'block';
-            imgElement.src = imgPath;
-        }
+            
+            frame.src = imgPath;
 
-        function imageLoaded() {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('result-image').style.display = 'block';
-        }
-
-        function imageError() {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('result-image').style.display = 'none';
-            document.getElementById('error-message').style.display = 'block';
+            setTimeout(() => {
+                loader.style.display = 'none';
+            }, 600);
         }
 
         function changeMetric(direction) {
