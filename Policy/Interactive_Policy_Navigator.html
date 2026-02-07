@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GB Energy System - Interactive Dashboard</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #27ae60; /* Green theme */
+            --bg: #f4f7f6;
+            --panel-bg: #ffffff;
+            --text: #333;
+            --toggle-bg: #e0e0e0;
+            --toggle-text: #555;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            background-color: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+        }
+
+        /* Sidebar Styling */
+        .sidebar {
+            width: 350px;
+            background-color: var(--panel-bg);
+            padding: 20px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 10;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            margin-top: 0;
+            color: var(--primary);
+            font-size: 1.3rem;
+            border-bottom: 2px solid var(--secondary);
+            padding-bottom: 10px;
+        }
+
+        .config-box {
+            background: #eef2f5;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #dcdcdc;
+            margin-bottom: 5px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        label.section-title {
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .section-subtitle {
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            margin-top: 2px;
+            font-style: italic;
+            line-height: 1.2;
+        }
+
+        /* --- TOGGLE SWITCH STYLING --- */
+        .toggle-container {
+            display: flex;
+            background-color: var(--toggle-bg);
+            border-radius: 6px;
+            padding: 3px;
+            position: relative;
+            user-select: none;
+            border: 1px solid #ccc;
+        }
+
+        .toggle-container input[type="radio"] {
+            display: none; 
+        }
+
+        .toggle-container label {
+            flex: 1;
+            text-align: center;
+            padding: 8px 5px;
+            font-size: 0.85rem; 
+            font-weight: 600;
+            color: var(--toggle-text);
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease-in-out;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toggle-container input[type="radio"]:checked + label {
+            background-color: var(--secondary);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        /* --- DROPDOWN & INPUT STYLING --- */
+        select {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            width: 100%;
+            box-sizing: border-box;
+            background-color: white;
+        }
+
+        /* --- BUTTONS --- */
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        button {
+            flex: 1;
+            padding: 10px;
+            background-color: var(--secondary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-weight: bold;
+        }
+
+        .file-info {
+            margin-top: auto;
+            font-size: 0.7rem;
+            color: #7f8c8d;
+            word-break: break-all;
+            background: #fafafa;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+
+        /* --- MAIN CONTENT --- */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+        }
+
+        #image-container {
+            width: 100%;
+            height: 95%;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        #result-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+
+        #error-message {
+            display: none;
+            color: #c0392b;
+            font-size: 1.1rem;
+            text-align: center;
+            padding: 40px;
+            background: #fff;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            border: 1px solid #ddd;
+            z-index: 10;
+        }
+
+        .loading {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--secondary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            position: absolute;
+            display: none;
+            z-index: 5;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h2>Results Navigator</h2>
+
+        <div class="config-box">
+            <div class="control-group" style="margin-bottom:0;">
+                <label class="section-title" for="summary_folder">Sensitivity Range</label>
+                <select id="summary_folder" onchange="updateImage()">
+                    <option value="Summary_Results_0_250_100_500">CO2=[0 - 500] & CfD=[0 - 250]</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label class="section-title">Carbon Capture & Storage (CCS) Pathways</label>
+            <div class="toggle-container">
+                <input type="radio" name="h2_type" id="h2_grey" value="GreyH2" data-folder="CfD_GreyH2_Cooperative" checked onchange="updateImage()">
+                <label for="h2_grey">Without CCS</label>
+
+                <input type="radio" name="h2_type" id="h2_blue" value="BlueH2" data-folder="CfD_BlueH2_Cooperative" onchange="updateImage()">
+                <label for="h2_blue">With CCS</label>
+            </div>
+            <div class="section-subtitle">Green H2 & Blue H2 (with CCS) or Grey H2 (without CCS)</div>
+        </div>
+
+        <div class="control-group">
+            <label class="section-title">Investment Scenario</label>
+            <div class="toggle-container">
+                <input type="radio" name="scenario" id="scen_hi" value="Hi_H2" checked onchange="updateImage()">
+                <label for="scen_hi">High H2</label>
+
+                <input type="radio" name="scenario" id="scen_lw" value="Lw_H2" onchange="updateImage()">
+                <label for="scen_lw">Low H2</label>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label class="section-title">Feedstock Price Level</label>
+            <div class="toggle-container">
+                <input type="radio" name="price" id="price_hi" value="High_Price" checked onchange="updateImage()">
+                <label for="price_hi">High Price</label>
+
+                <input type="radio" name="price" id="price_lw" value="Low_Price" onchange="updateImage()">
+                <label for="price_lw">Low Price</label>
+            </div>
+        </div>
+
+        <!-- UPDATED METRIC LIST -->
+        <div class="control-group">
+            <label class="section-title" for="metric">Metric / Heatmap</label>
+            <select id="metric" onchange="updateImage()">
+                <option value="Fig_emissions">Total system emissions</option>
+                <option value="Fig_opcost">Operational Cost</option>
+                <option value="Fig_Total_H2_Production">Total hydrogen production</option>
+                <option value="Fig_green_H2_ratio">Green hydrogen penetration ratio</option>
+                <option value="Fig_marg_H2_cost">Marginal cost of hydrogen</option>
+                <option value="Fig_Total_CfD_cost">Total CfD Cost [annual]</option>
+                <option value="Fig_NPV">Net Present Value (NPV)</option>
+                <option value="Fig_MACH">Marginal Abatement Cost of Hydrogen (MACH)</option>
+            </select>
+        </div>
+
+        <div class="nav-buttons">
+            <button onclick="changeMetric(-1)">← Prev</button>
+            <button onclick="changeMetric(1)">Next →</button>
+        </div>
+
+        <div class="file-info">
+            <strong>Path attempting to load:</strong><br>
+            <span id="filepath-display">...</span>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="loading" id="loader"></div>
+        <div id="image-container">
+            <div id="error-message">
+                <strong>File not found</strong><br><br>
+                <span style="font-size: 0.9em; color: #555;">
+                    The browser could not find the PDF at:<br>
+                    <code id="error-path-text" style="word-break: break-all; color: #c0392b;"></code>
+                </span>
+            </div>
+            <iframe id="result-frame" src=""></iframe>
+        </div>
+    </div>
+
+    <script>
+        const scenarioConfig = {
+            "Hi_H2": { folder: "Scenario_High_H2" },
+            "Lw_H2": { folder: "Scenario_Low_H2" }
+        };
+
+        const priceMap = {
+            "High_Price": "Hi_Price",
+            "Low_Price": "Lw_Price"
+        };
+
+        function getImagePath() {
+            const h2Input = document.querySelector('input[name="h2_type"]:checked');
+            const h2Type = h2Input.value; 
+            const projectFolder = h2Input.getAttribute('data-folder');
+            
+            const scenShort = document.querySelector('input[name="scenario"]:checked').value;
+            const priceVal = document.querySelector('input[name="price"]:checked').value;
+            const summaryFolderName = document.getElementById('summary_folder').value;
+            const metricPrefix = document.getElementById('metric').value;
+            
+            const scenFolder = scenarioConfig[scenShort].folder;
+            const mappedPrice = priceMap[priceVal];
+            
+            // Suffix logic: wo_CCS for Grey, with_CCS for Blue
+            const ccsSuffix = (h2Type === "GreyH2") ? "wo_CCS" : "with_CCS";
+
+            // Construct filename
+            const filename = `${metricPrefix}_${scenShort}_${mappedPrice}_${ccsSuffix}.pdf`;
+
+            return `${projectFolder}/${summaryFolderName}/Heatmaps/${scenFolder}/${mappedPrice}/${filename}`;
+        }
+
+        function updateImage() {
+            const imgPath = getImagePath();
+            const frame = document.getElementById('result-frame');
+            const pathDisplay = document.getElementById('filepath-display');
+            const errorMsg = document.getElementById('error-message');
+            const errorPathText = document.getElementById('error-path-text');
+            const loader = document.getElementById('loader');
+
+            pathDisplay.textContent = imgPath;
+            errorPathText.textContent = imgPath;
+            errorMsg.style.display = 'none';
+            loader.style.display = 'block';
+            
+            frame.src = imgPath;
+
+            setTimeout(() => {
+                loader.style.display = 'none';
+            }, 600);
+        }
+
+        function changeMetric(direction) {
+            const select = document.getElementById('metric');
+            if (direction === 1 && select.selectedIndex < select.options.length - 1) {
+                select.selectedIndex++;
+            } else if (direction === -1 && select.selectedIndex > 0) {
+                select.selectedIndex--;
+            }
+            updateImage();
+        }
+
+        window.onload = updateImage;
+
+        document.addEventListener('keydown', function(event) {
+            if(event.key === "ArrowDown") changeMetric(1);
+            if(event.key === "ArrowUp") changeMetric(-1);
+        });
+    </script>
+</body>
+</html>
